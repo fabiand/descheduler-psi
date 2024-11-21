@@ -4,7 +4,8 @@ die() { echo "err: $@" ; exit 1; }
 _oc() { echo "$ oc $@" ; oc $@ ; }
 qoc() { oc $@ > /dev/null 2>&1; }
 
-SA=descheduler
+# https://github.com/openshift/cluster-kube-descheduler-operator/blob/master/bindata/assets/kube-descheduler/operandserviceaccount.yaml
+SA=openshift-descheduler-operand
 NS=openshift-kube-descheduler-operator
 
 apply() {
