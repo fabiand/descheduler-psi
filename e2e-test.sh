@@ -8,6 +8,7 @@ DRY=${DRY:-false}
 c() { echo "# $@" ; }
 n() { echo "" ; }
 x() { echo "\$ $@" ; ${DRY} || eval "$@" ; }
+TBD() { red c "TBD - $@"; }
 red() { echo -e "\e[0;31m$@\e[0m" ; }
 green() { echo -e "\e[0;32m$@\e[0m" ; }
 die() { red "FATAL: $@" ; exit 1 ; }
@@ -16,30 +17,55 @@ assert() { echo "(assert:) \$ $@" ; { ${DRY} || eval $@ ; } || { echo "(assert?)
 c "Assumption: 'oc' is present and has access to the cluster"
 assert "which oc"
 
+if $WITH_DEPLOY;
+then
+  c "# Reconfigure node-exporter to export PSI"
 
-c "# Reconfigure node-exporter to export PSI"
+  c "Ensure that all MCP workers are updated"
+  assert "oc get mcp worker -o json | jq -e '.status.conditions[] | select(.type == \"Updated\" and .status == \"True\")'"
 
-c "Ensure that all MCP workers are updated"
-assert "oc get mcp worker -o json | jq -e '.status.conditions[] | select(.type == \"Updated\" and .status == \"True\")'"
+  n
+  c "Apply MachineConfig"
+  x "bash to.sh deploy"
 
-n
-c "Apply MachineConfig"
-x "bash to.sh deploy"
-
-n
-c "Wait for MCP to pickup new MC"
-x "bash to.sh wait_for_mcp"
-
-c "FIXME do some testing"
-
-n
-c "Delete the operator"
-x "bash to.sh destroy"
-x "bash to.sh wait_for_mcp"
+  n
+  c "Wait for MCP to pickup new MC"
+  x "bash to.sh wait_for_mcp"
+fi
 
 n
-c "Check the absence of swap"
-assert "bash to.sh check_nodes | grep -E '0\\s+0\\s+0'"
+c "Create workloads"
+x "oc apply -f tests/00-vms-no-load.yaml -f tests/01-vms-cpu-load.yaml"
+# FIXME 5 is hardcoded
+c "oc wait --for jsonpath='.status.readyReplicas'=5 vmpool no-load"
+c "oc wait --for jsonpath='.status.readyReplicas'=5 vmpool cpu-load"
+
+n
+c "Give it some time to generate load"
+x "sleep 1m"
+
+n
+c "Ensure that we have load and see it in the PSI metrics"
+# https://access.redhat.com/articles/4894261
+x "oc exec -c prometheus -n openshift-monitoring prometheus-k8s-0 -- curl -s --data-urlencode 'query=sum(irate(node_pressure_cpu_waiting_seconds_total[1m]))' http://localhost:9090/api/v1/query | tee /dev/stderr | jq -er '.data.result[0].value[1] > 0.1'"
+
+# Alerts
+# https://access.redhat.com/solutions/4250221
+#x "export ALERT_MANAGER=\$(oc get route alertmanager-main -n openshift-monitoring -o jsonpath='{@.spec.host}')"
+#assert "curl -s -k -H \"Authorization: Bearer \$(oc create token prometheus-k8s -n openshift-monitoring)\"  https://\$ALERT_MANAGER/api/v1/alerts | jq -e \".data | map(select(.labels.alertname == \\\"NodeSwapping\\\")) | .[0]\""
+
+TBD "rebealance"
+
+c "Delete workloads"
+x "oc delete -f tests/00-vms-no-load.yaml -f tests/01-vms-cpu-load.yaml"
+
+if $WITH_DEPLOY;
+then
+  n
+  c "Delete the operator"
+  x "bash to.sh destroy"
+  x "bash to.sh wait_for_mcp"
+fi
 
 n
 c "The validation has passed! All is well."
