@@ -1,4 +1,5 @@
 i() { echo "i: $@"; }
+c() { echo "# $@"; }
 x() { echo "\$ $@" ; eval "$@" ; }
 die() { echo "err: $@" ; exit 1; }
 _oc() { echo "$ oc $@" ; oc $@ ; }
@@ -8,23 +9,37 @@ SA=openshift-descheduler
 NS=openshift-kube-descheduler-operator
 
 apply() {
-  _oc apply -f manifests/mc-psi-worker.yaml
-  _oc apply -f manifests/mc-psi-controlplane.yaml
-  _oc apply -f manifests/descheduler-operator-cr.yaml
+  c "Reconfigure node-exporter to export PSI"
+  _oc apply -f manifests/10-mc-psi-controlplane.yaml
+  _oc apply -f manifests/11-mc-psi-worker.yaml
+  _oc apply -f manifests/12-mc-schedstats-worker.yaml
+  c "Deploy operators"
+  _oc apply -f manifests/20-namespaces.yaml
+  _oc apply -f manifests/30-operatorgroup.yaml
+  _oc apply -f manifests/31-subscriptions.yaml
 }
 
 
 deploy() {
+  apply
+  x "until qoc get crd hyperconvergeds.hco.kubevirt.io kubedeschedulers.operator.openshift.io ; do echo -n . ; sleep 6 ; done"
+  x "until _oc apply -f manifests/40-cnv-operator-cr.yaml ; do echo -n . sleep 6 ; done"
+  x "until _oc apply -f manifests/41-descheduler-operator-cr.yaml ; do echo -n . sleep 6 ; done"
+  wait_for_mcp
   qoc get sa -n $NS $SA || die "Did not find descheduler ServiceAccount '$SA' in namespace '$NS'. Is it installed?"
   _oc adm policy add-cluster-role-to-user cluster-monitoring-view -z $SA -n $NS
-  apply
-  wait_for_mcp
+
 }
 
 destroy() {
-  _oc delete -f manifests/mc-psi-worker.yaml
-  _oc delete -f manifests/mc-psi-controlplane.yaml
-  _oc delete -f manifests/descheduler-operator-cr.yaml
+  c "Delete the operators"
+  _oc delete -f manifests/41-descheduler-operator-cr.yaml
+  _oc delete -f manifests/40-cnv-operator-cr.yaml
+  _oc delete -f manifests/31-subscriptions.yaml
+  _oc delete -f manifests/30-operatorgroup.yaml
+  _oc delete -f manifests/20-namespaces.yaml
+#  _oc delete -f manifests/11-mc-psi-worker.yaml
+#  _oc delete -f manifests/10-mc-psi-controlplane.yaml
 }
 
 
