@@ -3,8 +3,8 @@
 set -e
 
 export DESCRIPTION="1. Cordon half of the worker nodes\n2. Create cpu VMs till we detect significant pressure\n3. Flip the partions of cordoned and uncordoned node\n4. Create the same amount of no-load VMs on the other set of nodes\n5. Uncordon all and rebalance"
-export STDD_LOAD_L_TH=0.2
-export STDD_LOAD_H_TH=0.3
+export STDD_LOAD_L_TH=0.10
+export STDD_LOAD_H_TH=0.25
 
 scale_up_pre() {
   CPUL_COUNT=$(( ALL_WORKER_NODE_COUNT / 2 ))
